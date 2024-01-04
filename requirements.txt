@@ -1,6 +1,5 @@
 opencv-python
-os
-sys
+os-sys
 torch
 huggingface_hub
 numpy==1.23.4
