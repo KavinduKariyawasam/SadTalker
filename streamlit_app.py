@@ -18,7 +18,7 @@ def download_model():
 def generate_videos(uploaded_image, uploaded_audio_files):
     st.session_state.video_index = 0
 
-    result_dir = "Results"
+    result_dir = "./Results"
     
     if uploaded_image is not None and uploaded_audio_files is not None and len(uploaded_audio_files) > 0:
         image_path = os.path.join(result_dir, "input_image.jpg")
