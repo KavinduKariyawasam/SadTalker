@@ -203,6 +203,7 @@ class AnimateFromCoeff():
         path = os.path.join(video_save_dir, 'temp_'+video_name)
         
         imageio.mimsave(path, result,  fps=float(25))
+        #imageio.mimsave(path, result)      ###EDITED
 
         av_path = os.path.join(video_save_dir, video_name)
         return_path = av_path 

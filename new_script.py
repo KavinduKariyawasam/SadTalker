@@ -1,32 +1,74 @@
-import streamlit as st
 import shutil
 import torch
 from time import strftime
 import os, sys
+import streamlit as st
+
 from src.utils.preprocess import CropAndExtract
 from src.test_audio2coeff import Audio2Coeff  
 from src.facerender.animate import AnimateFromCoeff
 from src.generate_batch import get_data
 from src.generate_facerender_batch import get_facerender_data
 from src.utils.init_path import init_path
-from huggingface_hub import snapshot_download
 
-def download_model():
-    REPO_ID = 'vinthony/SadTalker-V002rc'
-    snapshot_download(repo_id=REPO_ID, local_dir='./checkpoints', local_dir_use_symlinks=True)
+def download_models():
+    st.write("Downloading pre-trained models...")
+    os.system("bash scripts/download_models.sh")
 
-def generate_videos(uploaded_image, uploaded_audio_files):
-    st.session_state.video_index = 0
 
-    result_dir = "Results"
+def main():
+    st.set_page_config(
+      page_title='Avatar Creation DEMO',
+      page_icon='😎',
+      layout='wide',
+      initial_sidebar_state='expanded')
+
+
+    st.title("Avatar Creation DEMO")
+
+    #st.text("Upload an image and several audio files to generate videos corresponding to those audio files")
+
+    # Check if the session state object exists, and create it if not
+    if 'index' not in st.session_state:
+        st.session_state.index = 0
+
+
+    # Add Streamlit widgets for user input
+    uploaded_image = st.file_uploader("Upload Image HERE", type=["jpg", "jpeg", "png"])
+    uploaded_audio_files = st.file_uploader("Upload Audio Files HERE", type=["mp3"], accept_multiple_files=True)
+    #uploaded_audio = st.file_uploader("Upload Audio HERE", type=["mp3"])
+
+    result_dir = "/content/drive/MyDrive/Streamlit/Results"  # You may need to customize this based on your model
+
+               
+    # Add a button to trigger the model inference
+    # if st.button("Generate Video"):
+    #     # Check if both image and audio are uploaded
+    #     if uploaded_image is not None and uploaded_audio is not None:
+    #         # Save the uploaded files to local paths
+    #         image_path = os.path.join(result_dir, "input_image.jpg")
+    #         audio_path = os.path.join(result_dir, "input_audio.mp3")
+
+    #         with open(image_path, "wb") as image_file:
+    #             image_file.write(uploaded_image.getvalue())
+
+    #         with open(audio_path, "wb") as audio_file:
+    #             audio_file.write(uploaded_audio.getvalue())
     
-    if uploaded_image is not None and uploaded_audio_files is not None and len(uploaded_audio_files) > 0:
-        image_path = os.path.join(result_dir, "input_image.jpg")
-        with open(image_path, "wb") as image_file:
-            image_file.write(uploaded_image.getvalue())
+    # Add a button to trigger the model inference
+    if st.button("Generate Video"):
+        # Check if both image and audio files are uploaded
+        if uploaded_image is not None and uploaded_audio_files is not None and len(uploaded_audio_files) > 0:
+            # Save the uploaded image to a local path
+            image_path = os.path.join(result_dir, "input_image.jpg")
+            with open(image_path, "wb") as image_file:
+                image_file.write(uploaded_image.getvalue())
 
-        for index, current_audio_file in enumerate(uploaded_audio_files):
-            audio_path = os.path.join(result_dir, f"input_audio_{index}.mp3")
+            # Get the current audio file
+            current_audio_file = uploaded_audio_files[st.session_state.index]
+
+            # Save the current audio file to a local path
+            audio_path = os.path.join(result_dir, f"input_audio_{st.session_state.index}.mp3")
             with open(audio_path, "wb") as audio_file:
                 audio_file.write(current_audio_file.getvalue())
 
@@ -36,7 +78,7 @@ def generate_videos(uploaded_image, uploaded_audio_files):
             ref_eyeblink = None
             ref_pose = None
             result_dir = './results'
-            pose_style = 17
+            pose_style = 0
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             batch_size = 2
             input_yaw_list = None
@@ -45,18 +87,19 @@ def generate_videos(uploaded_image, uploaded_audio_files):
             checkpoint_dir = './checkpoints'
             size = 256
             expression_scale = 1.
-            enhancer = None
+            enhancer = "gfpgan"
+            #enhancer = None
             background_enhancer = None
             cpu = False
             face3dvis = False
             still = True
-            preprocess = 'full'
+            preprocess = 'extfull'
             verbose = False
             old_version = False
 
             # torch.backends.cudnn.enabled = False
 
-            save_dir = os.path.join(result_dir, strftime(f"output_{index}"))
+            save_dir = os.path.join(result_dir, strftime("output"))
             os.makedirs(save_dir, exist_ok=True)
 
             current_root_path = os.path.split(sys.argv[0])[0]
@@ -73,7 +116,7 @@ def generate_videos(uploaded_image, uploaded_audio_files):
             # crop image and extract 3dmm from image
             first_frame_dir = os.path.join(save_dir, 'first_frame_dir')
             os.makedirs(first_frame_dir, exist_ok=True)
-
+            #st.write('3DMM Extraction for source image')
             first_coeff_path, crop_pic_path, crop_info = preprocess_model.generate(pic_path, first_frame_dir, preprocess, source_image_flag=True, pic_size=size)
             if first_coeff_path is None:
                 st.write("Can't get the coeffs of the input")
@@ -117,68 +160,24 @@ def generate_videos(uploaded_image, uploaded_audio_files):
             result = animate_from_coeff.generate(data, save_dir, pic_path, crop_info, \
                                         enhancer=enhancer, background_enhancer=background_enhancer, preprocess=preprocess, img_size=size)
 
-            shutil.move(result, save_dir+ ".mp4")
-            st.success(f"Video {index + 1} generated successfully!")
+            shutil.move(result, save_dir+'.mp4')
+            #st.write('The generated video is named:', save_dir+'.mp4')
+            st.success("Video generated successfully!")
 
             if not verbose:
                 shutil.rmtree(save_dir)
-
-            st.session_state.video_index = 0
-
-# Function to play the next or previous video
-def play_video():
-    uploaded_audio_files = st.session_state.uploaded_audio_files
-    result_dir = "New"
-    st.markdown(
-        f'<style>video {{ width: 100%; max-width: 300px; height: 300px; }}</style>',
-        unsafe_allow_html=True
-    )
-
-    if st.button("Play Previous") and st.session_state.video_index > 0:
-        st.session_state.video_index -= 1
-
-    if st.button("Play Next") and st.session_state.video_index < len(uploaded_audio_files) - 1:
-        st.session_state.video_index += 1
-
-    if st.session_state.video_index < len(uploaded_audio_files):
-        video_path = os.path.join(result_dir, f"output_{st.session_state.video_index}.mp4")
-        st.video(video_path)
-    else:
-        st.write("All videos are played!")
-
-# Main function for the Streamlit app
-def main():
-    download_model()
-    st.set_page_config(
-        page_title='Avatar Creation DEMO',
-        page_icon='😎',
-        layout='wide',
-        initial_sidebar_state='expanded'
-    )
-
-    st.title("Avatar Creation DEMO")
-
-    # Create or get SessionState
-    if 'uploaded_audio_files' not in st.session_state:
-        st.session_state.uploaded_audio_files = None
-        st.session_state.video_index = 0
-
-    option = st.sidebar.selectbox('Select an option:', ['Generate Videos', 'Play Videos'])
-    
-    if option == 'Generate Videos':
-        uploaded_image = st.file_uploader("Upload Image HERE", type=["jpg", "jpeg", "png"])
-        uploaded_audio_files = st.file_uploader("Upload Audio Files HERE", type=["mp3"], accept_multiple_files=True)
-        
-        if st.button("Generate Videos"):
-            # Store uploaded_audio_files in session state
-            st.session_state.uploaded_audio_files = uploaded_audio_files
-            generate_videos(uploaded_image, uploaded_audio_files)
-    
-    elif option == 'Play Videos':
-        if st.session_state.uploaded_audio_files is not None:
-            play_video()
-        else:
-            st.warning("Please generate videos first.")
+            
+            st.markdown(
+              f'<style>video {{ width: 100%; max-width: 300px; height: 300px; }}</style>',
+              unsafe_allow_html=True
+            )
+            st.video(os.path.join(result_dir, "output.mp4"))
+    # Button to move to the next audio file
+    if st.button("Next"):
+        # Increment the index
+        st.session_state.index += 1
+        # Reset index if it goes beyond the number of uploaded audio files
+        st.session_state.index %= len(uploaded_audio_files)
 
 if __name__ == '__main__':
     main()

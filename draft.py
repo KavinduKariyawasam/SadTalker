@@ -4,6 +4,7 @@ import torch
 from time import  strftime
 import os, sys, time
 from argparse import ArgumentParser
+import streamlit as st
 
 from src.utils.preprocess import CropAndExtract
 from src.test_audio2coeff import Audio2Coeff  
@@ -12,27 +13,66 @@ from src.generate_batch import get_data
 from src.generate_facerender_batch import get_facerender_data
 from src.utils.init_path import init_path
 
-def main(args):
+def download_models():
+    st.write("Downloading pre-trained models...")
 
+    # Run the script to download models
+    os.system("bash scripts/download_models.sh")
+
+def main(args):
+    st.title("Talking head video generation")
+
+    # Add a button to download pre-trained models
+    if st.button("Download Models"):
+        download_models()
+        st.success("Pre-trained models downloaded successfully!")
+
+    # Add Streamlit widgets for user input
+    uploaded_image = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
+    uploaded_audio = st.file_uploader("Upload Audio", type=["mp3"])
+
+    result_dir = "D:\Internship\Streamlit app\SadTalker\Results"  # You may need to customize this based on your model
+
+    # Add a button to trigger the model inference
+    if st.button("Generate Video"):
+        # Check if both image and audio are uploaded
+        if uploaded_image is not None and uploaded_audio is not None:
+            # Save the uploaded files to local paths
+            image_path = os.path.join(result_dir, "input_image.jpg")
+            audio_path = os.path.join(result_dir, "input_audio.mp3")
+
+            with open(image_path, "wb") as image_file:
+                image_file.write(uploaded_image.getvalue())
+
+            with open(audio_path, "wb") as audio_file:
+                audio_file.write(uploaded_audio.getvalue())
 
     #torch.backends.cudnn.enabled = False
 
-    pic_path = args.source_image
-    audio_path = args.driven_audio
-    save_dir = os.path.join(args.result_dir, strftime("%Y_%m_%d_%H.%M.%S"))
+    pic_path = image_path
+    audio_path = audio_path
+    save_dir = os.path.join(result_dir, "output.mp4")
     os.makedirs(save_dir, exist_ok=True)
-    pose_style = args.pose_style
-    device = args.device
-    batch_size = args.batch_size
-    input_yaw_list = args.input_yaw
-    input_pitch_list = args.input_pitch
-    input_roll_list = args.input_roll
-    ref_eyeblink = args.ref_eyeblink
-    ref_pose = args.ref_pose
+    pose_style = 0
+    if torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+    #device = args.device
+    batch_size = 2
+    input_yaw_list = None
+    input_pitch_list = None
+    input_roll_list = None
+    ref_eyeblink = None
+    ref_pose = None
+    checkpoint_dir = './checkpoints'
+    size = 256
+    preprocess = 'crop'
+    old_version = None
 
     current_root_path = os.path.split(sys.argv[0])[0]
 
-    sadtalker_paths = init_path(args.checkpoint_dir, os.path.join(current_root_path, 'src/config'), args.size, args.old_version, args.preprocess)
+    sadtalker_paths = init_path(checkpoint_dir, os.path.join(current_root_path, 'src/config'), size, old_version, preprocess)
 
     #init model
     preprocess_model = CropAndExtract(sadtalker_paths, device)
@@ -45,8 +85,8 @@ def main(args):
     first_frame_dir = os.path.join(save_dir, 'first_frame_dir')
     os.makedirs(first_frame_dir, exist_ok=True)
     print('3DMM Extraction for source image')
-    first_coeff_path, crop_pic_path, crop_info =  preprocess_model.generate(pic_path, first_frame_dir, args.preprocess,\
-                                                                             source_image_flag=True, pic_size=args.size)
+    first_coeff_path, crop_pic_path, crop_info =  preprocess_model.generate(pic_path, first_frame_dir, preprocess,\
+                                                                             source_image_flag=True, pic_size=size)
     if first_coeff_path is None:
         print("Can't get the coeffs of the input")
         return
@@ -56,7 +96,7 @@ def main(args):
         ref_eyeblink_frame_dir = os.path.join(save_dir, ref_eyeblink_videoname)
         os.makedirs(ref_eyeblink_frame_dir, exist_ok=True)
         print('3DMM Extraction for the reference video providing eye blinking')
-        ref_eyeblink_coeff_path, _, _ =  preprocess_model.generate(ref_eyeblink, ref_eyeblink_frame_dir, args.preprocess, source_image_flag=False)
+        ref_eyeblink_coeff_path, _, _ =  preprocess_model.generate(ref_eyeblink, ref_eyeblink_frame_dir, preprocess, source_image_flag=False)
     else:
         ref_eyeblink_coeff_path=None
 
@@ -68,12 +108,12 @@ def main(args):
             ref_pose_frame_dir = os.path.join(save_dir, ref_pose_videoname)
             os.makedirs(ref_pose_frame_dir, exist_ok=True)
             print('3DMM Extraction for the reference video providing pose')
-            ref_pose_coeff_path, _, _ =  preprocess_model.generate(ref_pose, ref_pose_frame_dir, args.preprocess, source_image_flag=False)
+            ref_pose_coeff_path, _, _ =  preprocess_model.generate(ref_pose, ref_pose_frame_dir, preprocess, source_image_flag=False)
     else:
         ref_pose_coeff_path=None
 
     #audio2ceoff
-    batch = get_data(first_coeff_path, audio_path, device, ref_eyeblink_coeff_path, still=args.still)
+    batch = get_data(first_coeff_path, audio_path, device, ref_eyeblink_coeff_path, still=still)
     coeff_path = audio_to_coeff.generate(batch, save_dir, pose_style, ref_pose_coeff_path)
 
     # 3dface render
