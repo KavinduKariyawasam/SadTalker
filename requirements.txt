@@ -19,3 +19,7 @@ gradio
 gfpgan
 av
 safetensors
+cv2
+os
+sys
+torch
